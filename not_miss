@@ -1,0 +1,26 @@
+-- Main control loop
+-- while true do
+    setpoint = 360 -- Fixed setpoint value in degrees
+    pid:setSetpoint(setpoint)
+
+    while true do
+        local feedback = encoder:getPositionInDegrees() -- Get encoder position in degrees
+        local output = nil
+
+        -- Wait for a valid PID output
+        while not output do
+            output = pid:compute(feedback)
+        end
+
+        local speed = math.abs(output)
+        local direction = output >= 0 and "forward" or "reverse"
+        pwm:setSpeedAndDirection(speed, direction)
+
+        if math.abs(feedback - setpoint) < 1 then -- Tolerance of 1 degree
+            gpio.write(ledPin, gpio.HIGH) -- Turn on LED
+            break
+        end
+    end
+
+    -- gpio.write(ledPin, gpio.LOW) -- Turn off LED before restarting the loop
+-- end
