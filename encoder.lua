@@ -1,42 +1,37 @@
+local rotary = require("rotary")
+
 local Encoder = {}
 Encoder.__index = Encoder
+
+local ROTARY_ID = 0
+local ticksPerRevolution = 2720
 
 function Encoder:new(pinA, pinB)
     local obj = {
         pinA = pinA,
         pinB = pinB,
-        position = 0,
-        ticksPerRevolution = 544 -- ADJUST 
+        currentPosition = 0,
     }
 
-    gpio.mode(pinA, gpio.INPUT)
-    gpio.mode(pinB, gpio.INPUT)
-
-    gpio.trig(pinA, "both", function()
-        local pinAState = gpio.read(pinA)
-        local pinBState = gpio.read(pinB)
-        if pinAState == pinBState then
-            obj.position = obj.position + 1
-        else
-            obj.position = obj.position - 1
-        end
-        -- print("Encoder| position updated: ", obj.position) -- Debug log to track position changes
-    end)
+    -- Initialize the rotary module
+    rotary.close(ROTARY_ID) -- Close any previous instance
+    rotary.setup(ROTARY_ID, pinA, pinB)
 
     setmetatable(obj, Encoder)
     return obj
 end
 
 function Encoder:read()
-    return self.position
+    self.currentPosition = rotary.getpos(ROTARY_ID)
+    return self.currentPosition
 end
 
 function Encoder:getPositionInRadians()
-    return (self.position / self.ticksPerRevolution) * 2 * math.pi
+    return (self.currentPosition / ticksPerRevolution) * 2 * math.pi
 end
 
 function Encoder:getPositionInDegrees()
-    return (self.position / self.ticksPerRevolution) * 360
+    return (self.currentPosition / ticksPerRevolution) * 360
 end
 
 return Encoder

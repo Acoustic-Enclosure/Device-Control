@@ -6,8 +6,9 @@ print("Testing Encoder...")
 
 -- Set up a timer to periodically print the position and velocity
 local printTimer = tmr.create()
-printTimer:alarm(25, tmr.ALARM_AUTO, function()
+printTimer:alarm(100, tmr.ALARM_AUTO, function()
     print("Ticks:", encoder:read())
     print("Position (radians):", encoder:getPositionInRadians())
     print("Position (degrees):", encoder:getPositionInDegrees())
 end)
+

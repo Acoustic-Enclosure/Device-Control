@@ -1,35 +1,43 @@
 local PIDController = require("pid_controller")
 local PWMController = require("pwm_controller")
-local Encoder = require("encoder")
+local rotary = require("rotary")
 
--- Initialize components
-local ki = 0.0038
-local kp = 1 -- 9.7873e+05
-local kd = 8 -- -1.5608e+06
-local cwDirection = 1 -- Clockwise direction
-local ccwDirection = 0 -- Counter-clockwise direction
-local setpoint = 360 -- Fixed setpoint value in degrees
+-- Initialize PID
+local ki = 0.085 --0.085
+local kp = 3.75 -- 3
+local kd = 0.00001 -- 0.00001
+local cwDirection = 0 -- Clockwise direction
+local ccwDirection = 1 -- Counter-clockwise direction
+local setpoint = 120 -- Fixed setpoint value in degrees
+local pid = PIDController:new(kp, ki, kd, cwDirection, setpoint)
 
-local pid = PIDController:new(kp, ki, kd, cwDirection, setpoint) -- Example PID parameters
+-- Initialize PWM
 local pwm = PWMController:new(5, 7, 8) -- D5 pwm and D7-D8 for direction (Pulled to ground)
-local encoder = Encoder:new(1, 2) -- D1 and D2
-local ledPin = 0 -- D0 pin for LED
 
+-- Initialize test LED
+local ledPin = 4 -- D4 pin for LED
 gpio.mode(ledPin, gpio.OUTPUT)
-gpio.write(ledPin, gpio.LOW) -- Turn off LED initially
+gpio.write(ledPin, gpio.HIGH) -- Turn off LED initially
+
+-- Initialize rotary encoder
+local ROTARY_ID = 0
+local pinA, pinB = 1, 2 -- D1 and D2
+rotary.close(ROTARY_ID) -- Close any previous instance
+rotary.setup(ROTARY_ID, pinA, pinB)
+local ticksPerRevolution = 2710
 
 -- Set PID output limits
-local maxOutput = 255 --255 -- Max PWM value
+local maxOutput = 1023 --255 -- Max PWM value
 local minOutput = -maxOutput -- Min PWM value
 pid:setOutputLimits(minOutput, maxOutput)
-print("PID output limits set to:", minOutput, "to", maxOutput)
 
 -- Set sample time for PID
 pid:setSampleTime(50000) -- 50ms
 
--- Set initial setpoint to the current encoder reading to start paused
-print("Initial encoder position (degrees):", encoder:getPositionInDegrees())
-pid:setSetpoint(encoder:getPositionInDegrees())
+-- Set initial setpoint to the current rotary position to start paused
+local initialPosition = rotary.getpos(ROTARY_ID)
+local initialDegrees = (initialPosition / ticksPerRevolution) * 360
+pid:setSetpoint(initialDegrees)
 
 -- Start PWM
 pwm:setSpeedAndDirection(0, "none") -- Stop PWM initially
@@ -39,7 +47,8 @@ pwm:start()
 pid:setSetpoint(setpoint)
 
 local function controlLoop()
-    local feedback = encoder:getPositionInDegrees() -- Get encoder position in degrees
+    local position = rotary.getpos(ROTARY_ID)
+    local feedback = (position / ticksPerRevolution) * 360 -- Get rotary position in degrees
     local output = pid:compute(feedback)
     print("TEST| Feedback:", feedback, "Output:", output)
 
@@ -47,13 +56,12 @@ local function controlLoop()
         local speed = math.abs(output)
         local direction = output >= 0 and "forward" or "reverse"
         pwm:setSpeedAndDirection(speed, direction)
+    end
 
-        if math.abs(feedback - setpoint) < 1 then -- Tolerance of 1 degree
-            gpio.write(ledPin, gpio.HIGH) -- Turn on LED
-            tmr.create():alarm(1000, tmr.ALARM_SINGLE, function()
-                gpio.write(ledPin, gpio.LOW) -- Turn off LED after 1 second
-            end)
-        end
+    if math.abs(feedback - setpoint) < 1 then -- Tolerance of 1 degree
+        gpio.write(ledPin, gpio.LOW) -- Turn on LED
+    else
+        gpio.write(ledPin, gpio.HIGH) -- Turn off LED
     end
 end
 
