@@ -1,3 +1,5 @@
+local SetPoint = require("set_point")
+
 -- CONFIGURATION
 -- Wi-Fi settings
 local WIFI_SSID = "SiTeConectasTeHackeo" -- Wi-Fi SSID | "IZZI-33EC"
@@ -14,6 +16,25 @@ local MOTOR_ID = "1" -- this device’s motor ID
 -- MQTT topics
 local DEVICE_STATUS_TOPIC = "device/" .. CLIENT_ID .. "/status"
 local DEVICE_CMD_TOPIC = "device/" .. CLIENT_ID .. "/cmd"
+local function motorDataTopic(m) return "motor/" .. m .. "/data" end
+
+-- Physical settings
+local PWM_PIN_1 = 5 -- D5
+local DIR_PIN1_1 = 7 -- D7
+local DIR_PIN2_1 = 8 -- D8
+local ROTARY_PIN_A1 = 1 -- D1
+local ROTARY_PIN_B1 = 2 -- D2
+
+local PWM_PIN_2 = 6 -- D6
+local DIR_PIN1_2 = 9 -- D9
+local DIR_PIN2_2 = 10 -- D10
+local ROTARY_PIN_A2 = 3 -- D3
+local ROTARY_PIN_B2 = 4 -- D4
+
+-- Controller settings
+local KI = 0.85 -- 1.8
+local KP = 3.75 -- 8
+local KD = 0.00001 -- 0.5
 
 -- SETUP
 -- Wi-Fi connection
@@ -23,36 +44,70 @@ station_cfg.ssid=WIFI_SSID
 station_cfg.pwd=WIFI_PASSWORD 
 wifi.sta.config(station_cfg)
 
+-- Initialize two SetPoint objects for two motors
+local motor1 = SetPoint:new(PWM_PIN_1, DIR_PIN1_1, DIR_PIN2_1, ROTARY_PIN_A1, ROTARY_PIN_B1, KP, KI, KD, 1) -- Motor 1
+motor1:initialize()
+
 -- MQTT client
 local m = mqtt.Client(CLIENT_ID)
 
--- set Last‑Will: if this client drops, broker will publish DISCONNECTED (retained)
+-- Last‑Will: if this client drops, broker will publish DISCONNECTED (retained)
 m:lwt(DEVICE_STATUS_TOPIC, "DISCONNECTED", 1, 1)
 
 -- Handle offline event
 m:on("offline", function()
     print ("[MQTT] Offline")
-    -- Retry connection
-    connect_to_mqtt()
+    connect_to_mqtt() -- Retry connection
 end)
 
 -- Handle incoming messages
 m:on("message", function(client, topic, message)
-    print("[MQTT] Message received: " .. topic .. ": " .. message)
-    -- parse and act on payload
     local ok, cmd = pcall(sjson.decode, message)
     if not ok then
-        print("[ERR] invalid JSON command")
+        print("[ERR] Decoding JSON failed")
+        client:publish(DEVICE_STATUS_TOPIC, "CMD ERROR", 1, 0)
         return
     end
 
-    print("[JSON] Decoded command:")
-    for k, v in pairs(cmd) do
-        print("  " .. k .. ": " .. tostring(v))
-    end
+    if cmd.motor and cmd.angle then
+        local motor = nil
+        if cmd.motor == 1 then
+            motor = motor1
+        elseif cmd.motor == 2 then
+            motor = motor2
+        else
+            return
+        end
 
-    -- local motorStTopic = motorStatusTopic(cmd.motor)
-    -- m:publish(motorStTopic, "MOVING", 1, 0)
+        client:publish(motorDataTopic(cmd.motor), sjson.encode({status="BUSY"}), 1, 0)
+
+        motor:start(cmd.angle, function(data)
+            local extended_data = {
+                motor = cmd.motor,
+                errors = data.errors,
+                positions = data.positions,
+                status = "READY",
+            }
+            local encode_ok, payload = pcall(sjson.encode, extended_data)
+            if not encode_ok then
+                local encode_err = "[ERR] Failed to encode data to JSON"
+                print(encode_err)
+                local err_data = sjson.encode({
+                    motor = cmd.motor,
+                    status = "ERROR",
+                    message = encode_err,
+                })
+                client:publish(motorDataTopic(cmd.motor), err_data, 1, 0)
+                return
+            end
+
+            client:publish(motorDataTopic(cmd.motor), payload, 1, 0)
+            print("[MQTT] Cicle completed, data published.")
+        end)
+    else
+        print("[ERR] Bad request, missing body properties")
+        client:publish(DEVICE_STATUS_TOPIC, "CMD ERROR", 1, 0)
+    end
 end)
 
 -- MQTT connection logic with retries
@@ -65,7 +120,7 @@ local function connect_to_mqtt()
                 MQTT_RETRIES = 0
                 timer:stop()
                 conn:subscribe(DEVICE_CMD_TOPIC, 1, function() print("[MQTT] subscribed to " .. DEVICE_CMD_TOPIC) end)
-                conn:publish(DEVICE_STATUS_TOPIC, "READY", 1, 1)
+                conn:publish(DEVICE_STATUS_TOPIC, "CONNECTED", 1, 0) -- last is 0 to not retain
             end,
             function(_,reason)
                 print("[MQTT] Connection failed: " .. reason .. " (Attempt " .. MQTT_RETRIES .. ")")

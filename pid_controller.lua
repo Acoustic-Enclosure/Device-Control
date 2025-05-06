@@ -37,7 +37,7 @@ function PIDController:compute(input)
     if timeChange >= self.sampleTime then  -- Check if the sample time has elapsed
         local error = self.setpoint - input
         self.outputSum = self.outputSum + (self.ki * error * (self.sampleTime / 1000000))
-        print("PID| Error:", error, "Output Sum:", self.outputSum)
+        -- print("[PID] Error:", error, "Output Sum:", self.outputSum)
 
         if self.outputSum > self.outMax then
             self.outputSum = self.outMax
@@ -47,7 +47,7 @@ function PIDController:compute(input)
 
         local dInput = (input - self.lastInput) / (self.sampleTime / 1000000)
         local output = (self.kp * error) + self.outputSum - (self.kd * dInput)
-        print("PID| Output before normalization:", output)
+        -- print("[PID] Output before normalization:", output)
 
         if output > self.outMax then
             output = self.outMax
@@ -57,7 +57,7 @@ function PIDController:compute(input)
 
         self.lastInput = input
         self.lastTime = now
-        return output
+        return output, error -- Return output and error
     end
 
     return nil -- Return nil if the sample time hasn't elapsed
