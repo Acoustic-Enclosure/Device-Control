@@ -3,9 +3,9 @@ local PWMController = require("pwm_controller")
 local rotary = require("rotary")
 
 -- Initialize PID
-local ki = 0.085 --0.085
-local kp = 3.75 -- 3
-local kd = 0.00001 -- 0.00001
+local ki = 0 -- 1.8
+local kp = 12 -- 8
+local kd = 0 -- 0.5
 local cwDirection = 0 -- Clockwise direction
 local ccwDirection = 1 -- Counter-clockwise direction
 local setpoint = 120 -- Fixed setpoint value in degrees

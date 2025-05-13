@@ -1,17 +1,18 @@
+-- TODO: RESOLVE FOR 2 MOTORS
 local SetPoint = require("set_point")
 
 -- CONFIGURATION
 -- Wi-Fi settings
-local WIFI_SSID = "SiTeConectasTeHackeo" -- Wi-Fi SSID | "IZZI-33EC"
-local WIFI_PASSWORD = "NiditoBodet01" -- Wi-Fi password | "FKarr6FnGhaZqHerXc"
+local WIFI_SSID = "IZZI-33EC" -- Wi-Fi SSID | "IZZI-33EC" | "SiTeConectasTeHackeo"
+local WIFI_PASSWORD = "FKarr6FnGhaZqHerXc" -- Wi-Fi password | "FKarr6FnGhaZqHerXc" | "NiditoBodet01"
 local WIFI_RETRIES = 0
 local MQTT_RETRIES = 0
 
 -- MQTT broker settings
-local BROKER_HOST = "192.168.100.116" -- MQTT broker IP or hostname | $ ipconfig getifaddr en0
+local BROKER_HOST = "192.168.0.61" -- MQTT broker IP or hostname | $ ipconfig getifaddr en0
 local BROKER_PORT = 1883 -- MQTT TCP port
 local CLIENT_ID = "NODEMCU_01" -- unique client ID, change numeration for each device
-local MOTOR_ID = "1" -- this device’s motor ID
+print("[INFO] ID:", CLIENT_ID)
 
 -- MQTT topics
 local DEVICE_STATUS_TOPIC = "device/" .. CLIENT_ID .. "/status"
@@ -32,9 +33,9 @@ local ROTARY_PIN_A2 = 3 -- D3
 local ROTARY_PIN_B2 = 4 -- D4
 
 -- Controller settings
-local KI = 0.85 -- 1.8
-local KP = 3.75 -- 8
-local KD = 0.00001 -- 0.5
+local KP = 8 -- 3.75 -- 8
+local KI = 40 -- 0.85 -- 1.8
+local KD = 0.1056 -- 0.00001 -- 0.5
 
 -- SETUP
 -- Wi-Fi connection
@@ -47,6 +48,8 @@ wifi.sta.config(station_cfg)
 -- Initialize two SetPoint objects for two motors
 local motor1 = SetPoint:new(PWM_PIN_1, DIR_PIN1_1, DIR_PIN2_1, ROTARY_PIN_A1, ROTARY_PIN_B1, KP, KI, KD, 1) -- Motor 1
 motor1:initialize()
+motor1:setSampleTime(10000) -- 10ms
+motor1:setMaxOccurrences(30) -- 20 occurrences
 
 -- MQTT client
 local m = mqtt.Client(CLIENT_ID)
@@ -83,7 +86,7 @@ m:on("message", function(client, topic, message)
 
         motor:start(cmd.angle, function(data)
             local extended_data = {
-                motor = cmd.motor,
+                setpoint = cmd.angle,
                 errors = data.errors,
                 positions = data.positions,
                 status = "READY",
@@ -93,7 +96,6 @@ m:on("message", function(client, topic, message)
                 local encode_err = "[ERR] Failed to encode data to JSON"
                 print(encode_err)
                 local err_data = sjson.encode({
-                    motor = cmd.motor,
                     status = "ERROR",
                     message = encode_err,
                 })
@@ -115,7 +117,7 @@ local function connect_to_mqtt()
     tmr.create():alarm(1000, tmr.ALARM_AUTO, function(timer)
         -- On connection, subscribe to command topic and publish READY
         m:connect(BROKER_HOST, BROKER_PORT, false,
-            function(conn) 
+            function(conn)
                 print("[MQTT] Connected to broker: " .. BROKER_HOST .. ":" .. BROKER_PORT)
                 MQTT_RETRIES = 0
                 timer:stop()

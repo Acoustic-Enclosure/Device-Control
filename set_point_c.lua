@@ -2,10 +2,10 @@ local PIDController = require("pid_controller")
 local PWMController = require("pwm_controller")
 local rotary = require("rotary")
 
-local SetPoint = {}
-SetPoint.__index = SetPoint
+local SetPointC = {}
+SetPointC.__index = SetPointC
 
-function SetPoint:new(pwmPin, dirPin1, dirPin2, pinA, pinB, kp, ki, kd, id)
+function SetPointC:new(pwmPin, dirPin1, dirPin2, pinA, pinB, kp, ki, kd, id)
     local obj = {
         pwmPin = pwmPin,
         dirPin1 = dirPin1,
@@ -23,11 +23,11 @@ function SetPoint:new(pwmPin, dirPin1, dirPin2, pinA, pinB, kp, ki, kd, id)
         maxOccurrences = 100, -- Default max occurrences
     }
 
-    setmetatable(obj, SetPoint)
+    setmetatable(obj, SetPointC)
     return obj
 end
 
-function SetPoint:initialize()
+function SetPointC:initialize()
     -- Initialize rotary encoder
     rotary.close(self.rotaryId) -- Close any previous instance
     rotary.setup(self.rotaryId, self.pinA, self.pinB)
@@ -44,38 +44,38 @@ function SetPoint:initialize()
     self.pwm:setSpeedAndDirection(0, "none") -- Stop PWM initially
     self.pwm:start()
 
-    -- Set initial setpoint to the current rotary position to start paused
+    -- Set initial SetPointC to the current rotary position to start paused
     local initialPosition = rotary.getpos(self.rotaryId)
     if initialPosition > 10 then
-        error("[SetPoint] Error: Initial position is greater than 10.")
+        error("[SetPointC] Error: Initial position is greater than 10.")
     end
     local initialDegrees = (initialPosition / self.ticksPerRevolution) * 360
-    self.pid:setSetpoint(initialDegrees)
+    self.pid:setSetPointC(initialDegrees)
 
-    print("[SetPoint] Initialized with PID and PWM settings")
+    print("[SetPointC] Initialized with PID and PWM settings")
 end
 
-function SetPoint:setOutputLimits(maxOutput, minOutput)
+function SetPointC:setOutputLimits(maxOutput, minOutput)
     self.pid:setOutputLimits(minOutput, maxOutput)
 end
 
-function SetPoint:setSampleTime(sampleTime)
+function SetPointC:setSampleTime(sampleTime)
     self.pid:setSampleTime(sampleTime)
 end
 
-function SetPoint:setMaxOccurrences(maxOccurrences)
+function SetPointC:setMaxOccurrences(maxOccurrences)
     self.maxOccurrences = maxOccurrences
 end
 
-function SetPoint:start(setpointValue, onComplete)
+function SetPointC:start(SetPointCValue, onComplete)
     if not self.pid or not self.pwm then
-        print("[SetPoint] Error: SetPoint not initialized. Call initialize() first.")
+        print("[SetPointC] Error: SetPointC not initialized. Call initialize() first.")
         return
     end
 
-    -- Set the setpoint
-    local setpoint = setpointValue
-    self.pid:setSetpoint(setpoint)
+    -- Set the SetPointC
+    local SetPointC = SetPointCValue
+    self.pid:setSetPointC(SetPointC)
 
     -- Data collection
     local data = {
@@ -105,7 +105,7 @@ function SetPoint:start(setpointValue, onComplete)
         table.insert(data.errors, err)
         table.insert(data.positions, feedback)
 
-        -- Check if the setpoint is reached within a tolerance or if max occurrences reached
+        -- Check if the SetPointC is reached within a tolerance or if max occurrences reached
         occurrenceCount = occurrenceCount + 1
         if math.abs(err) < 1 or occurrenceCount >= self.maxOccurrences then -- Tolerance of 1 degree
             -- Stop the motor
@@ -134,7 +134,7 @@ function SetPoint:start(setpointValue, onComplete)
     self.controlTimer = tmr.create()
     self.controlTimer:alarm(100, tmr.ALARM_AUTO, controlLoop)
 
-    print("[SetPoint] Process started with setpoint: " .. setpoint)
+    print("[SetPointC] Process started with SetPointC: " .. SetPointC)
 end
 
-return SetPoint
+return SetPointC
