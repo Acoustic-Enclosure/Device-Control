@@ -9,9 +9,9 @@ function PIDController:new(kp, ki, kd, controllerDirection, setpoint)
         controllerDirection = controllerDirection or 1,
         outputSum = 0,
         lastInput = 0,
-        outMin = -math.huge, -- Infinite limits by default
-        outMax = math.huge, -- Infinite limits by default
-        sampleTime = 25000, -- Default sample time in microseconds (25ms)
+        outMin = -1023,
+        outMax = 1023,
+        sampleTime = 50000, -- Default sample time in microseconds (50ms)
         lastTime = tmr.now(), -- Initialize lastTime with the current time in microseconds
         setpoint = setpoint or 0 -- Initialize setpoint
     }
@@ -28,6 +28,26 @@ end
 
 function PIDController:setSetpoint(newSetpoint)
     self.setpoint = newSetpoint
+end
+
+function PIDController:setOutputLimits(min, max)
+    self.outMin = min
+    self.outMax = max
+
+    if self.outputSum > self.outMax then
+        self.outputSum = self.outMax
+    elseif self.outputSum < self.outMin then
+        self.outputSum = self.outMin
+    end
+end
+
+function PIDController:setControllerDirection(direction)
+    if direction ~= self.controllerDirection then
+        self.kp = -self.kp
+        self.ki = -self.ki
+        self.kd = -self.kd
+    end
+    self.controllerDirection = direction
 end
 
 function PIDController:compute(input)
@@ -61,26 +81,6 @@ function PIDController:compute(input)
     end
 
     return nil -- Return nil if the sample time hasn't elapsed
-end
-
-function PIDController:setOutputLimits(min, max)
-    self.outMin = min
-    self.outMax = max
-
-    if self.outputSum > self.outMax then
-        self.outputSum = self.outMax
-    elseif self.outputSum < self.outMin then
-        self.outputSum = self.outMin
-    end
-end
-
-function PIDController:setControllerDirection(direction)
-    if direction ~= self.controllerDirection then
-        self.kp = -self.kp
-        self.ki = -self.ki
-        self.kd = -self.kd
-    end
-    self.controllerDirection = direction
 end
 
 return PIDController

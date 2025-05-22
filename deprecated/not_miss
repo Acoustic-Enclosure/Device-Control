@@ -1,0 +1,183 @@
+-- Main control loop
+-- while true do
+    setpoint = 360 -- Fixed setpoint value in degrees
+    pid:setSetpoint(setpoint)
+
+    while true do
+        local feedback = encoder:getPositionInDegrees() -- Get encoder position in degrees
+        local output = nil
+
+        -- Wait for a valid PID output
+        while not output do
+            output = pid:compute(feedback)
+        end
+
+        local speed = math.abs(output)
+        local direction = output >= 0 and "forward" or "reverse"
+        pwm:setSpeedAndDirection(speed, direction)
+
+        if math.abs(feedback - setpoint) < 1 then -- Tolerance of 1 degree
+            gpio.write(ledPin, gpio.HIGH) -- Turn on LED
+            break
+        end
+    end
+
+    -- gpio.write(ledPin, gpio.LOW) -- Turn off LED before restarting the loop
+-- end
+
+local WifiController = require("wifi_controller")
+local MqttController = require("mqtt_controller")
+local MotorController = require("motor_controller")
+
+-- Configure networks list
+local NETWORKS = {
+    { ssid = "IZZI-33EC", pwd = "FKarr6FnGhaZqHerXc" },
+    { ssid = "SiTeConectasTeHackeo", pwd = "NiditoBodet01" },
+}
+
+-- Configure MQTT settings
+local DEVICE_ID = "NODEMCU_01" -- unique client ID, change numeration for each device
+local MOTOR_N1  = 1
+local MOTOR_N2  = 2
+
+local BASE          = "motors/" .. DEVICE_ID
+local GLOBAL_CFG    = "motors/config"
+local DEVICE_STATUS = BASE .. "/connection"
+-- local function cfgLimitTopic()    return GLOBAL_CFG .. "/limits"               end
+-- local function cfgSampleTopic()   return GLOBAL_CFG .. "/sample_time"          end
+-- local function pidTopic(m)        return BASE .. "/"..m.."/config/pid"         end
+local function setpointTopic(m)   return BASE .. "/"..m.."/config/setpoint"    end
+local function workingTopic(m)    return BASE .. "/"..m.."/telemetry/working"  end
+local function positionTopic(m)   return BASE .. "/"..m.."/telemetry/position" end
+local function errorLogTopic(m)   return BASE .. "/"..m.."/log/error"          end
+local function cleanupTopic(m)    return BASE .. "/"..m.."/cleanup"            end
+
+local MQTT_SETTINGS = {
+    broker_host  = "192.168.0.61", -- MQTT broker IP or hostname | $ ipconfig getifaddr en0
+    broker_port  = 1883,
+    client_id    = DEVICE_ID,
+    lwt_topic    = DEVICE_STATUS,
+    sub_topics   = {
+        -- { topic = cfgLimitTopic(),         qos = 2 },
+        -- { topic = cfgSampleTopic(),        qos = 2 },
+        -- { topic = pidTopic(MOTOR_N1),      qos = 2 },
+        -- { topic = pidTopic(MOTOR_N2),      qos = 2 },
+        { topic = setpointTopic(MOTOR_N1), qos = 2 },
+        { topic = setpointTopic(MOTOR_N2), qos = 2 },
+        { topic = cleanupTopic(MOTOR_N1),  qos = 2 },
+        { topic = cleanupTopic(MOTOR_N2),  qos = 2 },
+    }
+}
+
+-- Physical settings
+-- local PWM_PIN_1 = 5 -- D5
+-- local DIR_PIN1_1 = 7 -- D7
+-- local DIR_PIN2_1 = 8 -- D8
+-- local ROTARY_PIN_A1 = 1 -- D1
+-- local ROTARY_PIN_B1 = 2 -- D2
+
+-- local PWM_PIN_2 = 6 -- D6
+-- local DIR_PIN1_2 = 7 -- D11 not possible, using same as motor 1
+-- local DIR_PIN2_2 = 8 -- D12 not possible, using same as motor 1
+-- local ROTARY_PIN_A2 = 3 -- D3
+-- local ROTARY_PIN_B2 = 4 -- D4
+
+-- Create WifiController instance
+local wifiController = WifiController:new(NETWORKS)
+
+-- Create MqttController instance
+local mqttController = MqttController:new(MQTT_SETTINGS)
+
+-- Create MotorController instances
+-- print("[DEBUG] Memory: ", node.heap())
+-- local motor1 = MotorController:new(PWM_PIN_1, DIR_PIN1_1, DIR_PIN2_1, MOTOR_N1, ROTARY_PIN_A1, ROTARY_PIN_B1)
+-- local motor2 = MotorController:new(PWM_PIN_2, DIR_PIN1_2, DIR_PIN2_2, MOTOR_N2, ROTARY_PIN_A2, ROTARY_PIN_B2)
+-- local motor1 = MotorController:new(5, 7, 8, MOTOR_N1, 1, 2)
+-- local motor2 = MotorController:new(6, 7, 8, MOTOR_N2, 3, 4)
+-- print("[DEBUG] Memory: ", node.heap())
+
+wifiController:on("connected", function(ip)
+    print("[MAIN] Connected with IP: " .. ip)
+    collectgarbage()
+    print("[DEBUG] Memory: ", node.heap())
+    mqttController:start()
+end)
+
+mqttController:on("connected", function(ip)
+    print("[MAIN] MQTT connected to " .. ip .. " broker.")
+    collectgarbage()
+    print("[DEBUG] Memory: ", node.heap())
+    mqttController:publish(DEVICE_STATUS, sjson.encode({ status = "CONNECTED" }), 2, 1)
+end)
+
+mqttController:on("message", function(topic, payload)
+    collectgarbage()
+    print("[DEBUG] Memory: ", node.heap())
+    local ok, msg = pcall(sjson.decode, payload)
+    if not ok then
+        print("[ERROR] Failed to decode message: ", payload)
+        return
+    end
+    collectgarbage()
+    print("[DEBUG] Memory: ", node.heap())
+
+    -- if topic == pidTopic(MOTOR_N1) then
+    --     motor1:initialize(msg.kp, msg.ki, msg.kd)
+    -- elseif topic == pidTopic(MOTOR_N2) then
+    --     motor2:initialize(msg.kp, msg.ki, msg.kd)
+    if topic == setpointTopic(MOTOR_N1) then
+        mqttController:publish(workingTopic(MOTOR_N1), sjson.encode({ status = "BUSY" }), 2, 0)
+        local motor = MotorController:new(5, 7, 8, MOTOR_N1, 1, 2)
+
+        motor:initialize(msg.kp, msg.ki, msg.kd)
+        motor:setSetpoint(msg.setpoint)
+        motor:startControl(
+            function(data)
+                mqttController:publish(positionTopic(MOTOR_N1), sjson.encode(data), 2, 0)
+            end,
+            function(data)
+                mqttController:publish(workingTopic(MOTOR_N1), sjson.encode(data), 2, 0)
+            end
+        )
+
+        motor = nil
+        collectgarbage()
+    elseif topic == setpointTopic(MOTOR_N2) then
+        local motor = MotorController:new(6, 7, 8, MOTOR_N2, 3, 4)
+
+        motor:initialize(msg.kp, msg.ki, msg.kd)
+        motor:setSetpoint(msg.setpoint)
+        motor:startControl(
+            function(data)
+                mqttController:publish(positionTopic(MOTOR_N1), sjson.encode(data), 2, 0)
+            end,
+            function(data)
+                mqttController:publish(workingTopic(MOTOR_N1), sjson.encode(data), 2, 0)
+            end
+        )
+
+        motor = nil
+        collectgarbage()
+        -- mqttController:publish(workingTopic(MOTOR_N2), sjson.encode({ status = "BUSY" }), 2, 0)
+        -- motor1:stopControl()
+        -- motor2:setSetpoint(msg.setpoint)
+        -- motor2:startControl(
+        --     function(data)
+        --         mqttController:publish(positionTopic(MOTOR_N2), sjson.encode(data), 2, 0)
+        --     end,
+        --     function(data)
+        --         mqttController:publish(workingTopic(MOTOR_N2), sjson.encode(data), 2, 0)
+        --     end
+        -- )
+    elseif topic == cleanupTopic(MOTOR_N1) then
+        motor1:cleanup()
+    elseif topic == cleanupTopic(MOTOR_N2) then
+        motor2:cleanup()
+    else
+        print("[INFO] Unknown topic: " .. topic)
+    end
+    print("[DEBUG] Memory: ", node.heap())
+end)
+
+wifiController:start()
+

@@ -36,18 +36,10 @@ function MqttController:retry()
     end)
 end
 
-function MqttController:subscribe(topic, qos)
-    if self.mqtt_client then
-        self.mqtt_client:subscribe(topic, qos or 0)
-    else
-        print("[MQTT] Cannot subscribe, client not connected")
-    end
-end
-
 function MqttController:_init_client()
     local client = mqtt.Client(self.client_id, 60, nil, nil, 1)
 
-    client:lwt(self.lwt_topic, sjson.encode({ status = "DISCONNECTED" }), 2, 1)
+    client:lwt(self.lwt_topic, sjson.encode({ status = "DISCONNECTED" }), 2)
 
     client:on("message", function(c, topic, payload)
         print(string.format("[MQTT] Message on %s: %s", topic, payload or ""))
@@ -68,12 +60,12 @@ function MqttController:start()
     end
 
     self.mqtt_client:connect(self.broker_host, self.broker_port, false,
-        function(c)
+        function(client)
             if self.retry_timer then self.retry_timer:stop() end
             for _, entry in ipairs(self.sub_topics) do
                 local topic = entry.topic
                 local qos = entry.qos or 0
-                self:subscribe(topic, qos)
+                client:subscribe(topic, qos)
             end
             self:emit("connected", self.broker_host.."/"..self.broker_port)
         end,
