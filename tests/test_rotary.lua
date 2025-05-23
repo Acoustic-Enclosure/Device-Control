@@ -2,18 +2,25 @@
 rotary.close(1) -- Close any previous instance
 rotary.setup(1, 1, 2) -- D1 and D2
 rotary.close(2) -- Close any previous instance
-rotary.setup(2, 3, 4) -- D3 and D4
+rotary.setup(2, 5, 6) -- D3 and D4
 
 print("Testing Rotary Module Measurements...")
 
 -- Set up a timer to periodically print the position in degrees and radians
 local ticksPerRevolution = 2710
 local printTimer = tmr.create()
-printTimer:alarm(100, tmr.ALARM_AUTO, function()
+local degrees1 = 0
+local degrees2 = 0
+printTimer:alarm(500, tmr.ALARM_AUTO, function()
     local position1 = rotary.getpos(1)
-    local degrees1 = (position1 / ticksPerRevolution) * 360
+    if position1 then 
+        degrees1 = (position1 / ticksPerRevolution) * 360
+    end
+
     local position2 = rotary.getpos(2)
-    local degrees2 = (position2 / ticksPerRevolution) * 360
+    if position2 then 
+        degrees2 = (position2 / ticksPerRevolution) * 360
+    end
     print("Rotary 1 Position: " .. position1 .. " ticks, " .. degrees1 .. " degrees")
     print("Rotary 2 Position: " .. position2 .. " ticks, " .. degrees2 .. " degrees")
 end)

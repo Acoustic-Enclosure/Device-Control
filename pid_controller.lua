@@ -9,8 +9,8 @@ function PIDController:new(kp, ki, kd, controllerDirection, setpoint)
         controllerDirection = controllerDirection or 1,
         outputSum = 0,
         lastInput = 0,
-        outMin = -1023,
-        outMax = 1023,
+        outMin = -255, --1023
+        outMax = 255, --1023
         sampleTime = 50000, -- Default sample time in microseconds (50ms)
         lastTime = tmr.now(), -- Initialize lastTime with the current time in microseconds
         setpoint = setpoint or 0 -- Initialize setpoint

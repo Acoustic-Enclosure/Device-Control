@@ -54,7 +54,7 @@ function MotorController:startControl(dataCallback, stopCallback)
     local startTime = tmr.now()
 
     self.controlTimer = tmr.create()
-    self.controlTimer:alarm(100, tmr.ALARM_AUTO, function()
+    self.controlTimer:alarm(300, tmr.ALARM_AUTO, function()
         local position = rotary.getpos(self.rotaryId)
         local normalizedPosition = (position % self.ticksPerRevolution + self.ticksPerRevolution) % self.ticksPerRevolution
         local feedback = (normalizedPosition / self.ticksPerRevolution) * 360 -- Convert ticks to degrees

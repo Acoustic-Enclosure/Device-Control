@@ -4,8 +4,8 @@ local MotorController = require("motor_controller")
 
 -- Configure networks list
 local NETWORKS = {
-    { ssid = "IZZI-33EC", pwd = "FKarr6FnGhaZqHerXc" },
     { ssid = "SiTeConectasTeHackeo", pwd = "NiditoBodet01" },
+    -- { ssid = "IZZI-33EC", pwd = "FKarr6FnGhaZqHerXc" },
 }
 
 -- Configure MQTT settings
@@ -21,7 +21,8 @@ local function positionTopic(m)   return BASE .. "/"..m.."/telemetry/position" e
 local function errorLogTopic(m)   return BASE .. "/"..m.."/log/error"          end
 
 local MQTT_SETTINGS = {
-    broker_host  = "192.168.0.61", -- MQTT broker IP or hostname | $ ipconfig getifaddr en0
+    broker_host  = "192.168.100.116", -- MQTT broker IP or hostname | $ ipconfig getifaddr en0
+    -- broker_host  = "192.168.0.61", -- MQTT broker IP or hostname | $ ipconfig getifaddr en0
     broker_port  = 1883,
     client_id    = DEVICE_ID,
     lwt_topic    = DEVICE_STATUS,
@@ -60,7 +61,7 @@ mqttController:on("message", function(topic, payload)
         return
     end
 
-    if topic == setpointTopic(1) then
+    if topic == setpointTopic(1) or topic == setpointTopic(2) then
         local motorId = string.match(topic, BASE.."/(.-)/config/setpoint")
         if not motorId then
             return
@@ -68,14 +69,21 @@ mqttController:on("message", function(topic, payload)
         motorId = tonumber(motorId)
 
         mqttController:publish(workingTopic(motorId), sjson.encode({ status = "BUSY" }), 2)
-        
-        motor = MotorController:new(5, 7, 8, motorId, 1, 2)
+
+        if motorId == 1 then
+            motor = MotorController:new(7, 3, 4, motorId, 1, 2) -- Used to be 5, 7, 8 and 1, 2
+        elseif motorId == 2 then
+            motor = MotorController:new(8, 3, 4, motorId, 5, 6)
+        else
+            print("[ERROR] Invalid motor ID: " .. motorId)
+            return
+        end
 
         motor:initialize(msg.kp, msg.ki, msg.kd)
         motor:setSetpoint(msg.setpoint)
         motor:startControl(
             function(data)
-                mqttController:publish(positionTopic(motorId), sjson.encode(data), 2)
+                mqttController:publish(positionTopic(motorId), sjson.encode(data), 0) -- QoS 0 for telemetry
             end,
             function()
                 if motor then
