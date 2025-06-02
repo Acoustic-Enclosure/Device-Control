@@ -11,11 +11,10 @@ function MotorController:new(pwmPin, dirPin1, dirPin2, rotaryId, rotaryPinA, rot
         rotaryId = rotaryId,
         rotaryPinA = rotaryPinA,
         rotaryPinB = rotaryPinB,
-        ticksPerRevolution = 2710, -- Default ticks per revolution
-        tolerance =  1, -- Default tolerance of 1 degree
+        ticksPerRevolution = 2710,  -- Default ticks per revolution
+        tolerance =  1,             -- Default tolerance of 1 degree
         setpoint = 0,
         controlTimer = nil,
-        -- dataCallback = nil -- Callback for sending telemetry data
     }
 
     setmetatable(obj, MotorController)

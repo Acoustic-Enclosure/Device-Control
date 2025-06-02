@@ -1,11 +1,10 @@
 local WifiController = require("wifi_controller")
 local MqttController = require("mqtt_controller")
-local MotorController = require("motor_controller")
+local TrajectoryController = require("trajectory_controller")
 
 -- Configure networks list
 local NETWORKS = {
-    { ssid = "SiTeConectasTeHackeo", pwd = "NiditoBodet01" },
-    -- { ssid = "IZZI-33EC", pwd = "FKarr6FnGhaZqHerXc" },
+    { ssid = "IZZI-33EC", pwd = "FKarr6FnGhaZqHerXc" },
 }
 
 -- Configure MQTT settings
@@ -21,18 +20,20 @@ local function positionTopic(m)   return BASE .. "/"..m.."/telemetry/position" e
 local function errorLogTopic(m)   return BASE .. "/"..m.."/log/error"          end
 
 local MQTT_SETTINGS = {
-    broker_host  = "192.168.100.116", -- MQTT broker IP or hostname | $ ipconfig getifaddr en0
-    -- broker_host  = "192.168.0.61", -- MQTT broker IP or hostname | $ ipconfig getifaddr en0
-    broker_port  = 1883,
-    client_id    = DEVICE_ID,
-    lwt_topic    = DEVICE_STATUS,
-    sub_topics   = {
-        { topic = ACTION_TOPIC,            qos = 2 },
-        { topic = CLEANUP_TOPIC,           qos = 2 },
+    -- broker_host    = "192.168.0.61", -- MQTT broker IP or hostname | $ ipconfig getifaddr en0
+    broker_host    = "n1655655.ala.dedicated.aws.emqxcloud.com",
+    broker_port    = 1883, -- 1883 for non-secure, 8883 for secure
+    client_id      = DEVICE_ID,
+    username       = DEVICE_ID,
+    password       = "device",
+    lwt_topic      = DEVICE_STATUS,
+    sub_topics     = {
+        { topic = ACTION_TOPIC,     qos = 2 },
+        { topic = CLEANUP_TOPIC,    qos = 2 },
     }
 }
 
--- Create variable for motor
+-- Create variable for motor trajectory controller
 local motor = nil
 
 -- Create WifiController instance
@@ -41,27 +42,66 @@ local wifiController = WifiController:new(NETWORKS)
 -- Create MqttController instance
 local mqttController = MqttController:new(MQTT_SETTINGS)
 
-wifiController:on("connected", function(ip)
-    print("[MAIN] Connected with IP: " .. ip)
+-- Memory optimization helper
+local function optimizeMemory(label)
     collectgarbage()
+    print("[MEM] " .. (label or "") .. " " .. node.heap())
+end
+
+local function cleanupMotor(motorId)
+    if motor then
+        motor:cleanup()
+        motor = nil
+    else
+        print("[INFO] No active motor to clean up.")
+    end
+    mqttController:publish(workingTopic(motorId), sjson.encode({ status = "READY" }), 2)
+end
+
+local function initMotor(motorId)
+    optimizeMemory("Before motor init:")
+    local success, result = pcall(function()
+        if motorId == 1 then
+            return TrajectoryController:new(7, 3, 4, motorId, 1, 2)
+        else
+            return TrajectoryController:new(8, 3, 4, motorId, 5, 6)
+        end
+    end)
+
+    if not success then
+        print("[ERROR] Failed to initialize motor " .. motorId .. ": " .. result)
+        return nil
+    end
+
+    optimizeMemory("After motor init:")
+    return result
+end
+
+wifiController:on("connected", function(ip)
+    optimizeMemory("Wi-Fi connected:")
     mqttController:start()
 end)
 
 mqttController:on("connected", function(ip)
-    print("[MAIN] MQTT connected to " .. ip .. " broker.")
-    collectgarbage()
+    optimizeMemory("MQTT connected:")
     mqttController:publish(DEVICE_STATUS, sjson.encode({ status = "CONNECTED" }), 2, 1)
+    cleanupMotor(1) -- Clean up any previous motor state
+    cleanupMotor(2) -- Clean up any previous motor state
 end)
 
 mqttController:on("message", function(topic, payload)
-    collectgarbage()
+    optimizeMemory("Before message processing:")
+
     local ok, msg = pcall(sjson.decode, payload)
     if not ok then
         print("[ERROR] Failed to decode message: ", payload)
         return
     end
 
-    if topic == setpointTopic(1) or topic == setpointTopic(2) then
+    if topic == CLEANUP_TOPIC then
+        cleanupMotor(msg.motorId)
+        return
+    elseif topic == setpointTopic(1) or topic == setpointTopic(2) then
         local motorId = string.match(topic, BASE.."/(.-)/config/setpoint")
         if not motorId then
             return
@@ -70,42 +110,28 @@ mqttController:on("message", function(topic, payload)
 
         mqttController:publish(workingTopic(motorId), sjson.encode({ status = "BUSY" }), 2)
 
-        if motorId == 1 then
-            motor = MotorController:new(7, 3, 4, motorId, 1, 2) -- Used to be 5, 7, 8 and 1, 2
-        elseif motorId == 2 then
-            motor = MotorController:new(8, 3, 4, motorId, 5, 6)
-        else
-            print("[ERROR] Invalid motor ID: " .. motorId)
+        motor = initMotor(motorId)
+        if not motor then
             return
         end
 
+        -- Initialize controller with PID values
         motor:initialize(msg.kp, msg.ki, msg.kd)
-        motor:setSetpoint(msg.setpoint)
-        motor:startControl(
+
+        -- Start trajectory
+        motor:moveToPosition(
+            msg.setpoint,
             function(data)
                 mqttController:publish(positionTopic(motorId), sjson.encode(data), 0) -- QoS 0 for telemetry
             end,
             function()
-                if motor then
-                    motor:cleanup()
-                else
-                    print("[INFO] Motor not initialized, skipping cleanup.")
-                end
-                mqttController:publish(workingTopic(motorId), sjson.encode({ status = "READY" }), 2)
-                motor = nil
+                cleanupMotor(motorId)
             end
         )
-    elseif topic == CLEANUP_TOPIC then
-        if motor then
-            motor:cleanup()
-            motor = nil
-        else
-            print("[INFO] Motor not initialized, skipping cleanup.")
-        end
-        mqttController:publish(workingTopic(msg.motorId), sjson.encode({ status = "READY" }), 2)
     else
-        print("[INFO] Unknown topic: " .. topic)
+        print("[ERROR] Unknown topic: " .. topic)
     end
+    optimizeMemory("After message processing:")
 end)
 
 wifiController:start()

@@ -7,7 +7,7 @@ rotary.setup(2, 5, 6) -- D3 and D4
 print("Testing Rotary Module Measurements...")
 
 -- Set up a timer to periodically print the position in degrees and radians
-local ticksPerRevolution = 2710
+local ticksPerRevolution = 2730 -- previously 2710
 local printTimer = tmr.create()
 local degrees1 = 0
 local degrees2 = 0

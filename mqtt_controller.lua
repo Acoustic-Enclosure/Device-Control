@@ -6,6 +6,8 @@ function MqttController:new(config)
         broker_host     = config.broker_host or "",
         broker_port     = config.broker_port or 1883,
         client_id       = config.client_id or "NODEMCU_0X",
+        username        = config.username or "",
+        password        = config.password or "",
         lwt_topic       = config.lwt_topic or "",
         sub_topics      = config.sub_topics or {},
         reconnect_delay = 5000,
@@ -37,7 +39,7 @@ function MqttController:retry()
 end
 
 function MqttController:_init_client()
-    local client = mqtt.Client(self.client_id, 60, nil, nil, 1)
+    local client = mqtt.Client(self.client_id, 60, self.username, self.password, 1)
 
     client:lwt(self.lwt_topic, sjson.encode({ status = "DISCONNECTED" }), 2)
 

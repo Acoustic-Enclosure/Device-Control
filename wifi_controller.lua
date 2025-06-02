@@ -29,7 +29,6 @@ end
 
 function WifiController:tryCurrent()
     local net = self.networks[self.idx]
-    print("[Wi-Fi] Connecting to: " .. net.ssid)
     wifi.setmode(wifi.STATION)
     wifi.sta.config{ ssid=net.ssid, pwd=net.pwd }
     wifi.sta.connect()

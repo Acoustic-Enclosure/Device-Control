@@ -1,5 +1,5 @@
 {
     "baudrate": "115200",
-    "port": "/dev/tty.usbserial-0001",
+    "port": "/dev/tty.usbserial-1130",
     "connectionDelay": "300"
 }
