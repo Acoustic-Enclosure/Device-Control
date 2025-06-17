@@ -25,7 +25,9 @@ function TrajectoryController:new(pwmPin, dirPin1, dirPin2, rotaryId, rotaryPinA
         timer = nil,
         beginTime = nil,
         elapsedTime = 0,
-        feedforwardValue = 0,       -- Feedforward compensation value
+        -- Feedforward parameters
+        Kv = 0,                   -- Velocity gain (damping coefficient)
+        Ka = 0,                   -- Acceleration gain (inertia coefficient)
         -- Callbacks
         dataCallback = nil,         -- Callback for telemetry data
         completeCallback = nil      -- Callback when trajectory completes
@@ -35,7 +37,7 @@ function TrajectoryController:new(pwmPin, dirPin1, dirPin2, rotaryId, rotaryPinA
 end
 
 -- Initialize the controller with PID parameters
-function TrajectoryController:initialize(kp, ki, kd)
+function TrajectoryController:initialize(kp, ki, kd, kv, ka)
     -- Initialize PWM
     self.pwm:setSpeedAndDirection(0, "none")
     self.pwm:start()
@@ -45,6 +47,11 @@ function TrajectoryController:initialize(kp, ki, kd)
 
     -- Create PID controller
     self.pid = PIDController:new(kp, ki, kd, 0, 0)
+
+    -- Set feedforward parameters
+    if kv then self.Kv = kv end
+    if ka then self.Ka = ka end
+
     return self
 end
 
@@ -92,24 +99,24 @@ function TrajectoryController:_processTrajectory()
 
     -- Phase 1: Initial hold (0 to startTime)
     if self.elapsedTime < self.startTime then
-        setpointValue = 0
-        feedforward = 0
 
     -- Phase 2: Smooth transition (startTime to stopTime)
     elseif self.elapsedTime < self.stopTime then
         -- Normalize time to 0-1 range for interpolation
         local normalizedTime = (self.elapsedTime - self.startTime) / (self.stopTime - self.startTime)
-        -- Apply cubic easing function: 1-(1-t)^3
-        local t = 1 - math.pow(1 - normalizedTime, 3)
+        -- Apply cubic interpolation
+        local t = 10 * normalizedTime^3 - 15 * normalizedTime^4 + 6 * normalizedTime^5
         -- Calculate interpolated setpoint
         setpointValue = t * self.targetSetpoint
-        -- Calculate decreasing feedforward value
-        feedforward = self.feedforwardValue * (1 - normalizedTime)
+        -- Calculate feedforward
+        local vel_reference = self.targetSetpoint * (30 * normalizedTime^4 - 60 * normalizedTime^3 + 30 * normalizedTime^2)
+        local acc_reference = self.targetSetpoint * (120 * normalizedTime^3 - 180 * normalizedTime^2 + 60 * normalizedTime)
+        if acc_reference < 0 then acc_reference = 0 end
+        feedforward = self.Ka * acc_reference + self.Kv * vel_reference
 
     -- Phase 3: Final hold (stopTime to executionTime)
     else
         setpointValue = self.targetSetpoint
-        feedforward = 0
     end
 
     -- Update PID setpoint
@@ -129,24 +136,27 @@ function TrajectoryController:_processTrajectory()
     end
 
     -- Periodic garbage collection
-    if math.floor(self.elapsedTime / self.updateInterval) % 20 == 0 then
-        collectgarbage()
-    end
+    collectgarbage()
 end
 
 -- Private function to perform a single control cycle
 function TrajectoryController:_controlCycle(feedforward)
     -- Get current position
     local position = rotary.getpos(self.rotaryId)
-    local normalizedPosition = (position % self.ticksPerRevolution + self.ticksPerRevolution) % self.ticksPerRevolution
-    local feedback = (normalizedPosition / self.ticksPerRevolution) * 360 -- Convert ticks to degrees
+    local input = (position / self.ticksPerRevolution) * 360 -- Convert ticks to degrees
+    if input > 720 then self:resetRotary() end
 
     -- Compute PID output
-    local output, error = self.pid:compute(feedback)
+    local output, error = self.pid:compute(input)
 
     -- Add feedforward to output
     if output and feedforward then
         output = output + feedforward
+        if output > self.pid.outMax then
+            output = self.pid.outMax
+        elseif output < self.pid.outMin then
+            output = self.pid.outMin
+        end
     end
 
     -- Apply output to motor
@@ -162,7 +172,7 @@ function TrajectoryController:_controlCycle(feedforward)
 
         self.dataCallback({
             setpoint = self.currentSetpoint,
-            input = feedback,
+            input = input,
             output = output or 0,
             error = error or 0
         })

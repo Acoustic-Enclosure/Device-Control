@@ -8,7 +8,7 @@ local NETWORKS = {
 }
 
 -- Configure MQTT settings
-local DEVICE_ID = "NODEMCU_01" -- unique client ID, change numeration for each device
+local DEVICE_ID = "NODEMCU_05" -- unique client ID, change numeration for each device
 
 local BASE          = "motors/" .. DEVICE_ID
 local DEVICE_STATUS = BASE .. "/connection"
@@ -20,9 +20,8 @@ local function positionTopic(m)   return BASE .. "/"..m.."/telemetry/position" e
 local function errorLogTopic(m)   return BASE .. "/"..m.."/log/error"          end
 
 local MQTT_SETTINGS = {
-    -- broker_host    = "192.168.0.61", -- MQTT broker IP or hostname | $ ipconfig getifaddr en0
-    broker_host    = "n1655655.ala.dedicated.aws.emqxcloud.com",
-    broker_port    = 1883, -- 1883 for non-secure, 8883 for secure
+    broker_host    = "n1655655.ala.dedicated.aws.emqxcloud.com", -- EMQX Cloud broker | $ ipconfig getifaddr en0
+    broker_port    = 1883,
     client_id      = DEVICE_ID,
     username       = DEVICE_ID,
     password       = "device",
@@ -84,7 +83,7 @@ end)
 
 mqttController:on("connected", function(ip)
     optimizeMemory("MQTT connected:")
-    mqttController:publish(DEVICE_STATUS, sjson.encode({ status = "CONNECTED" }), 2, 1)
+    mqttController:publish(DEVICE_STATUS, sjson.encode({ status = "CONNECTED" }), 2) -- without retain
     cleanupMotor(1) -- Clean up any previous motor state
     cleanupMotor(2) -- Clean up any previous motor state
 end)
@@ -116,7 +115,7 @@ mqttController:on("message", function(topic, payload)
         end
 
         -- Initialize controller with PID values
-        motor:initialize(msg.kp, msg.ki, msg.kd)
+        motor:initialize(msg.kp, msg.ki, msg.kd, msg.kv, msg.ka)
 
         -- Start trajectory
         motor:moveToPosition(
