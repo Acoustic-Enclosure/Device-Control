@@ -26,18 +26,19 @@ function TrajectoryController:new(pwmPin, dirPin1, dirPin2, rotaryId, rotaryPinA
         beginTime = nil,
         elapsedTime = 0,
         -- Feedforward parameters
-        Kv = 0,                   -- Velocity gain (damping coefficient)
-        Ka = 0,                   -- Acceleration gain (inertia coefficient)
+        Kv = 0,                     -- Velocity gain (damping coefficient)
+        Ka = 0,                     -- Acceleration gain (inertia coefficient)
         -- Callbacks
         dataCallback = nil,         -- Callback for telemetry data
-        completeCallback = nil      -- Callback when trajectory completes
+        completeCallback = nil,     -- Callback when trajectory completes
+        telemetry = false           -- Enable telemetry
     }
     setmetatable(obj, TrajectoryController)
     return obj
 end
 
 -- Initialize the controller with PID parameters
-function TrajectoryController:initialize(kp, ki, kd, kv, ka)
+function TrajectoryController:initialize(kp, ki, kd, kv, ka, telemetry)
     -- Initialize PWM
     self.pwm:setSpeedAndDirection(0, "none")
     self.pwm:start()
@@ -51,6 +52,9 @@ function TrajectoryController:initialize(kp, ki, kd, kv, ka)
     -- Set feedforward parameters
     if kv then self.Kv = kv end
     if ka then self.Ka = ka end
+
+    -- Set telemetry flag
+    if telemetry ~= nil then self.telemetry = telemetry end
 
     return self
 end
@@ -124,12 +128,12 @@ function TrajectoryController:_processTrajectory()
     self.pid:setSetpoint(self.currentSetpoint)
 
     -- Perform control cycle
-    self:_controlCycle(feedforward)
+    self:_controlCycle(feedforward, false)
 
     -- Check if trajectory is complete
     if self.elapsedTime >= self.executionTime then
-        -- Stop trajectory and call completion callback
-        self:stop()
+        self:_controlCycle(feedforward, true) -- Final control cycle with feedforward
+
         if self.completeCallback then
             self.completeCallback()
         end
@@ -140,11 +144,20 @@ function TrajectoryController:_processTrajectory()
 end
 
 -- Private function to perform a single control cycle
-function TrajectoryController:_controlCycle(feedforward)
+function TrajectoryController:_controlCycle(feedforward, last)
+    if last then 
+        -- Before stopping, do a final small movement on the opposite direction
+        self.pwm:setSpeedAndDirection(254, "reverse")
+        tmr.delay(800000) -- 800ms delay (in microseconds)
+
+        -- Stop trajectory and call completion callback
+        self:stop()
+    end
+
     -- Get current position
     local position = rotary.getpos(self.rotaryId)
     local input = (position / self.ticksPerRevolution) * 360 -- Convert ticks to degrees
-    if input > 720 then self:resetRotary() end
+    -- if input > 720 then self:resetRotary() end
 
     -- Compute PID output
     local output, error = self.pid:compute(input)
@@ -160,21 +173,22 @@ function TrajectoryController:_controlCycle(feedforward)
     end
 
     -- Apply output to motor
-    if output then
+    if output and not last then
         local speed = math.abs(output)
         local direction = output >= 0 and "forward" or "reverse"
         self.pwm:setSpeedAndDirection(speed, direction)
     end
 
-    -- Send telemetry data via callback
-    if self.dataCallback then
-        local progress = math.min(math.floor((self.elapsedTime / self.executionTime) * 100), 100)
-
+    if last then 
+        -- Send telemetry data via callback
+        self.dataCallback({
+            error = error
+        })
+    elseif self.telemetry then
         self.dataCallback({
             setpoint = self.currentSetpoint,
             input = input,
-            output = output or 0,
-            error = error or 0
+            output = output,
         })
     end
 end

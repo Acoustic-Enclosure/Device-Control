@@ -20,7 +20,7 @@ local function positionTopic(m)   return BASE .. "/"..m.."/telemetry/position" e
 local function errorLogTopic(m)   return BASE .. "/"..m.."/log/error"          end
 
 local MQTT_SETTINGS = {
-    broker_host    = "n1655655.ala.dedicated.aws.emqxcloud.com", -- EMQX Cloud broker | $ ipconfig getifaddr en0
+    broker_host    = "192.168.0.61", -- EMQX Cloud broker | $ ipconfig getifaddr en0
     broker_port    = 1883,
     client_id      = DEVICE_ID,
     username       = DEVICE_ID,
@@ -44,15 +44,15 @@ local mqttController = MqttController:new(MQTT_SETTINGS)
 -- Memory optimization helper
 local function optimizeMemory(label)
     collectgarbage()
-    print("[MEM] " .. (label or "") .. " " .. node.heap())
+    -- print("[MEM] " .. (label or "") .. " " .. node.heap())
 end
 
 local function cleanupMotor(motorId)
     if motor then
         motor:cleanup()
         motor = nil
-    else
-        print("[INFO] No active motor to clean up.")
+    -- else
+    --     print("[INFO] No active motor to clean up.")
     end
     mqttController:publish(workingTopic(motorId), sjson.encode({ status = "READY" }), 2)
 end
@@ -68,7 +68,7 @@ local function initMotor(motorId)
     end)
 
     if not success then
-        print("[ERROR] Failed to initialize motor " .. motorId .. ": " .. result)
+        -- print("[ERROR] Failed to initialize motor " .. motorId .. ": " .. result)
         return nil
     end
 
@@ -93,11 +93,12 @@ mqttController:on("message", function(topic, payload)
 
     local ok, msg = pcall(sjson.decode, payload)
     if not ok then
-        print("[ERROR] Failed to decode message: ", payload)
+        -- print("[ERROR] Failed to decode message: ", payload)
         return
     end
 
     if topic == CLEANUP_TOPIC then
+        node.restart()
         cleanupMotor(msg.motorId)
         return
     elseif topic == setpointTopic(1) or topic == setpointTopic(2) then
@@ -115,7 +116,7 @@ mqttController:on("message", function(topic, payload)
         end
 
         -- Initialize controller with PID values
-        motor:initialize(msg.kp, msg.ki, msg.kd, msg.kv, msg.ka)
+        motor:initialize(msg.kp, msg.ki, msg.kd, msg.kv, msg.ka, msg.telemetry)
 
         -- Start trajectory
         motor:moveToPosition(
@@ -127,8 +128,6 @@ mqttController:on("message", function(topic, payload)
                 cleanupMotor(motorId)
             end
         )
-    else
-        print("[ERROR] Unknown topic: " .. topic)
     end
     optimizeMemory("After message processing:")
 end)
