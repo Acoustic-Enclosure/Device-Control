@@ -63,9 +63,6 @@ end
 function TrajectoryController:resetRotary()
     rotary.close(self.rotaryId) -- Close any previous instance
     rotary.setup(self.rotaryId, self.rotaryPinA, self.rotaryPinB)
-    if rotary.getpos(self.rotaryId) > 10 then
-        self:resetRotary()
-    end
 end
 
 -- Start trajectory execution to reach the target setpoint
@@ -147,7 +144,7 @@ end
 function TrajectoryController:_controlCycle(feedforward, last)
     if last then 
         -- Before stopping, do a final small movement on the opposite direction
-        self.pwm:setSpeedAndDirection(254, "reverse")
+        self.pwm:setSpeedAndDirection(154, "reverse") -- past 254
         tmr.delay(800000) -- 800ms delay (in microseconds)
 
         -- Stop trajectory and call completion callback
@@ -157,7 +154,7 @@ function TrajectoryController:_controlCycle(feedforward, last)
     -- Get current position
     local position = rotary.getpos(self.rotaryId)
     local input = (position / self.ticksPerRevolution) * 360 -- Convert ticks to degrees
-    -- if input > 720 then self:resetRotary() end
+    if input > 720 then self:resetRotary() end
 
     -- Compute PID output
     local output, error = self.pid:compute(input)
